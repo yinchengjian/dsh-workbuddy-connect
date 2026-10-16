@@ -13,7 +13,7 @@
 ```text
 请帮我安装并验证 DSH（DeepSeek Harness）插件 dsh-workbuddy-connect（项目地址：https://github.com/yinchengjian/dsh-workbuddy-connect）：
 先阅读项目 README，确认我实际使用的界面（Web / Desktop / TUI）与 DSH 内核版本，桌面版以 App 内置核心为准，不要用独立 CLI 的版本代替；
-再按版本对应关系安装（0.2.0-rc.2 → 0.7.7；本项目自 0.7.7 起为自维护 fork，安装请直接从 GitHub 源码装，不要装 npm 上 corrinehu 的原包），优先走本机受支持的非插件市场渠道；部分 Desktop 发行版（尤其官方 Electron 版）的 profile 由 App 管理，各发行版规则未必相同，先确认我所用的发行版，再探查其合规的安装方式，但不得绕过其校验；
+再按版本对应关系安装（0.2.0-rc.2 → `github:yinchengjian/dsh-workbuddy-connect#v0.7.7`。本项目自 0.7.7 起为自维护 fork，安装请直接从 GitHub 源码装、并且**必须带 tag**，不要装 npm 上 corrinehu 的原包，也不要用不带 ref 的裸 GitHub 地址——那会跟随 main 的最新提交），优先走本机受支持的非插件市场渠道；部分 Desktop 发行版（尤其官方 Electron 版）的 profile 由 App 管理，各发行版规则未必相同，先确认我所用的发行版，再探查其合规的安装方式，但不得绕过其校验；
 任何本地文件或配置改动，先征得我同意并做好备份；
 装完后验证模型选择器里出现 WorkBuddy 分组，并陪我完成一次简短对话，再用一次 web_search 确认联网搜索可用；
 若 Desktop 安装仍因 generation 校验失败（如 @types/retry 误报），请如实报告、参照上游 dataelement/dsh-desktop#688，并建议我改用独立的 Web / TUI，不要修改依赖包或绕过校验。
@@ -21,24 +21,54 @@
 
 内核与插件版本速查（完整对应表见文末「版本兼容与历史版本」）：
 
-| DSH 内核 | 推荐插件版 |
-|---|---|
-| 0.2.0-rc.2 | 0.7.7（本 fork 当前版） |
-| 0.2.0-rc.1 | 0.7.0 |
-| 0.1.5 – 0.1.7 | 0.6.5 |
+| DSH 内核 | 推荐插件版 | 安装写法 |
+|---|---|---|
+| 0.2.0-rc.2 | 0.7.7（本 fork 当前版） | `github:yinchengjian/dsh-workbuddy-connect#v0.7.7` |
+| 0.2.0-rc.1 | 0.7.0 | `dsh-workbuddy-connect@0.7.0`（npm，上游） |
+| 0.1.5 – 0.1.7 | 0.6.5 | `dsh-workbuddy-connect@0.6.5`（npm，上游） |
 
 <details>
 <summary>手动安装（命令行，仅 Web / TUI）</summary>
 
 ```sh
-# Web（本 fork 从 GitHub 源码安装；npm 上的 dsh-workbuddy-connect 是上游原包，不含本 fork 的搜索改动）
-dsh plugin --profile web add github:yinchengjian/dsh-workbuddy-connect
+# Web：按内核对应的 tag 安装（务必带 tag，见下方说明）
+dsh plugin --profile web add github:yinchengjian/dsh-workbuddy-connect#v0.7.7
 dsh web
 
 # TUI（示例为 0.1.x 内核；该 profile 需用 pnpm 11 安装，如 npx pnpm@11）
 dsh plugin --profile dsh-tui add dsh-workbuddy-connect@0.6.5
 dsh --profile dsh-tui
 ```
+
+**为什么本 fork 要写 `github:yinchengjian/...`，不能像上游那样直接写包名？**
+
+裸包名（`dsh-workbuddy-connect@0.7.7`）走的是 npm registry，而这个包名在 npm 上属于上游作者：
+
+```
+maintainers:     ["corrinehu <core_hh@outlook.com>"]
+repository.url:  git+https://github.com/corrinehu/dsh-workbuddy-connect.git
+```
+
+npm 包名全局唯一、先到先得，所以本 fork 既不能复用这个名字发布，registry 上自然也没有 `0.7.7`——直接写裸名装 0.7.7 会失败：
+
+```
+npm error notarget No matching version found for dsh-workbuddy-connect@0.7.7.
+```
+
+`github:用户/仓库` 是 npm 的 git 协议写法，不需要包名所有权，直接按仓库地址取源码，因此是当前唯一可用的分发方式。若将来本 fork 发到 npm（换个包名，或申请到 `@yinchengjian` scope），就能恢复成 `@yinchengjian/dsh-workbuddy-connect@0.7.7` 这样的裸名写法。
+
+**安装务必带 tag 或 commit**，不要用裸的 `github:yinchengjian/dsh-workbuddy-connect`：不带 ref 时 npm 会跟随默认分支 `main` 的**最新提交**，那可能是尚未发布的中间状态，与本插件「必须和 DSH 内核版本严格匹配」的要求相冲突。每个发布版本都有对应 tag（`v0.7.7` 等），装哪个内核就装哪个 tag；也可以锁定到某个 commit（`#<sha>`）。
+
+从 GitHub 安装时，pnpm 默认会拦下依赖的构建脚本，首次安装可能以 `ERR_PNPM_IGNORED_BUILDS` 结束——这是 pnpm 的策略，不是插件错误。按它打印的提示，在 profile 的 `pnpm-workspace.yaml` 里把这些键加进 `allowBuilds` 后重跑同一命令即可（`dsh` 自己也会提示这条路径）：
+
+```yaml
+allowBuilds:
+  dsh-workbuddy-connect: true
+  '@google/genai': true
+  protobufjs: true
+```
+
+（`dsh-workbuddy-connect` 需要构建，是因为本 fork 与上游一样只发布 `lib/`，从 git 安装要靠 `prepare` 脚本现场构建。）
 
 </details>
 
@@ -150,7 +180,7 @@ dsh plugin --profile web exec dsh-workbuddy-connect doctor --provider workbuddy-
 | `0.1.2-rc.1` | `0.3.1` | 更早旧线，仅历史维护。 |
 | `0.1.1-rc.2` | `0.2.6` | 更早旧线，仅历史维护。 |
 
-> **本仓库是自维护 fork**：从 [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect) fork 而来（`upstream` 远端保留，便于择机合并上游修复）。自 **0.7.7** 起在本 fork 上维护，与上游的差异见下方更新记录；安装请用 `github:yinchengjian/dsh-workbuddy-connect`，npm 上的 `dsh-workbuddy-connect` 仍是上游原包、不含本 fork 的改动。
+> **本仓库是自维护 fork**：从 [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect) fork 而来（`upstream` 远端保留，便于择机合并上游修复）。自 **0.7.7** 起在本 fork 上维护，与上游的差异见下方更新记录；安装写法为 `github:yinchengjian/dsh-workbuddy-connect#v0.7.7`（带 tag 的 git 写法，原因见安装章节），npm 上的 `dsh-workbuddy-connect` 仍是上游原包、不含本 fork 的改动。
 
 历次更新（完整记录见 [releases](https://github.com/yinchengjian/dsh-workbuddy-connect/releases)；0.7.6 及更早的条目来自上游）：
 
@@ -164,7 +194,7 @@ dsh plugin --profile web exec dsh-workbuddy-connect doctor --provider workbuddy-
 - **0.7.0**：适配 DSH 0.2.0 的设置服务改造，不再支持 0.1.x。
 - **0.6.5**：0.1.x 线最终版本。
 
-固定版本安装示例：`dsh plugin --profile web add github:yinchengjian/dsh-workbuddy-connect`（跟随本 fork 的 main）；需要锁定时用 `github:yinchengjian/dsh-workbuddy-connect#v0.7.7`。
+安装示例（按内核选 tag）：`dsh plugin --profile web add github:yinchengjian/dsh-workbuddy-connect#v0.7.7`。各版本的 tag 见 [releases](https://github.com/yinchengjian/dsh-workbuddy-connect/releases)；也可以锁定到某个 commit（`github:yinchengjian/dsh-workbuddy-connect#<sha>`），但**不要用不带 ref 的地址**——那会跟随 `main` 最新提交，可能是未发布的中间状态。
 
 **不要把 profile 级的 `@earendil-works/pi-ai` 升到 1.x**：本插件与 `0.2.0-rc.2` 这一代内核都要求 `^0.87.1`（0.7.2 起由插件自带），第三方插件管理器的「可更新」提示不校验 peer 约束、不能照做（[#86](https://github.com/corrinehu/dsh-workbuddy-connect/issues/86)）；为此历史遗留的 `overrides: {'@earendil-works/pi-ai': '0.87.1'}` 在确认其他插件不依赖前也不要盲目移除。
 

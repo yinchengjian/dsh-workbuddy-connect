@@ -13,7 +13,7 @@ Brings the models available in your signed-in WorkBuddy / WorkBuddy AI desktop a
 ```text
 Please install and verify the DSH (DeepSeek Harness) plugin dsh-workbuddy-connect for me (project: https://github.com/yinchengjian/dsh-workbuddy-connect).
 Start by reading the project README and confirming which interface I actually use (Web / Desktop / TUI) and its DSH core version — for the Desktop app, the bundled core, never the standalone CLI's version.
-Then install per the version mapping (0.2.0-rc.2 -> 0.7.7; this project is a self-maintained fork from 0.7.7 on, so install it from GitHub source rather than the corrinehu package on npm), preferring a locally supported non-market channel; on some Desktop distributions (the official Electron app in particular) the profile is app-managed and rules vary by distribution — check mine first, then explore its compliant install route, but never bypass its validation.
+Then install per the version mapping (0.2.0-rc.2 -> `github:yinchengjian/dsh-workbuddy-connect#v0.7.7`. This project is a self-maintained fork from 0.7.7 on, so install it from GitHub source and **always pin a tag** — do not use the corrinehu package on npm, and do not use a bare GitHub specifier without a ref, which would follow the latest commit on main), preferring a locally supported non-market channel; on some Desktop distributions (the official Electron app in particular) the profile is app-managed and rules vary by distribution — check mine first, then explore its compliant install route, but never bypass its validation.
 Ask for my consent and make backups before changing any local files or configuration.
 After installing, verify the WorkBuddy group appears in the model picker, walk me through one short conversation, and run one web_search to confirm web search works.
 If the Desktop install still fails generation validation (e.g. the @types/retry false positive), report it honestly, reference upstream dataelement/dsh-desktop#688, and suggest switching to the standalone Web / TUI — do not modify dependency packages or bypass the check.
@@ -21,25 +21,54 @@ If the Desktop install still fails generation validation (e.g. the @types/retry 
 
 Core-to-plugin quick reference (full table in "Compatibility and release history" at the end):
 
-| DSH core | Recommended plugin |
-|---|---|
-| 0.2.0-rc.2 | 0.7.7 (this fork's current release) |
-| 0.2.0-rc.1 | 0.7.0 |
-| 0.1.5 – 0.1.7 | 0.6.5 |
+| DSH core | Recommended plugin | Install spec |
+|---|---|---|
+| 0.2.0-rc.2 | 0.7.7 (this fork's current release) | `github:yinchengjian/dsh-workbuddy-connect#v0.7.7` |
+| 0.2.0-rc.1 | 0.7.0 | `dsh-workbuddy-connect@0.7.0` (npm, upstream) |
+| 0.1.5 – 0.1.7 | 0.6.5 | `dsh-workbuddy-connect@0.6.5` (npm, upstream) |
 
 <details>
 <summary>Manual install (command line, Web / TUI only)</summary>
 
 ```sh
-# Web (install from GitHub source: this fork; the npm package dsh-workbuddy-connect
-# is still the upstream release and does not carry this fork's search change)
-dsh plugin --profile web add github:yinchengjian/dsh-workbuddy-connect
+# Web: install the tag that matches your core (always pin a tag — see below)
+dsh plugin --profile web add github:yinchengjian/dsh-workbuddy-connect#v0.7.7
 dsh web
 
 # TUI (example for a 0.1.x core; that profile needs pnpm 11, e.g. npx pnpm@11)
 dsh plugin --profile dsh-tui add dsh-workbuddy-connect@0.6.5
 dsh --profile dsh-tui
 ```
+
+**Why this fork needs `github:yinchengjian/...` instead of a bare package name like upstream?**
+
+A bare name (`dsh-workbuddy-connect@0.7.7`) resolves against the npm registry, and that name belongs to the upstream author there:
+
+```
+maintainers:     ["corrinehu <core_hh@outlook.com>"]
+repository.url:  git+https://github.com/corrinehu/dsh-workbuddy-connect.git
+```
+
+npm package names are globally unique and first-come-first-served, so this fork can neither publish under that name nor find a `0.7.7` on the registry — installing the bare name at 0.7.7 fails outright:
+
+```
+npm error notarget No matching version found for dsh-workbuddy-connect@0.7.7.
+```
+
+`github:user/repo` is npm's git-protocol specifier: it needs no package-name ownership and fetches the source straight from the repository, which is why it is the only channel available today. If this fork is ever published to npm (under a different name, or via an owned `@yinchengjian` scope), the bare form `@yinchengjian/dsh-workbuddy-connect@0.7.7` becomes possible again.
+
+**Always pin a tag or commit** — do not use a bare `github:yinchengjian/dsh-workbuddy-connect`. Without a ref, npm follows the latest commit on the default branch `main`, which may be an unreleased intermediate state; that conflicts with this plugin's requirement of exactly matching your DSH core version. Every release has a tag (`v0.7.7`, …), so install the tag that matches your core, or pin a commit with `#<sha>`.
+
+Installing from GitHub makes pnpm block the dependency's build scripts by default, so the first run may end with `ERR_PNPM_IGNORED_BUILDS` — that is pnpm's policy, not a plugin error. Follow the hint it prints, add these keys to the profile's `pnpm-workspace.yaml` under `allowBuilds`, and re-run the same command (`dsh` prints this path too):
+
+```yaml
+allowBuilds:
+  dsh-workbuddy-connect: true
+  '@google/genai': true
+  protobufjs: true
+```
+
+(`dsh-workbuddy-connect` needs to build because, like upstream, this fork ships only `lib/`; a git install rebuilds it on the spot via the `prepare` script.)
 
 </details>
 
@@ -150,7 +179,7 @@ The plugin version must match the DSH core — a mismatched combination fails to
 | `0.1.2-rc.1` | `0.3.1` | Older line, historical maintenance only. |
 | `0.1.1-rc.2` | `0.2.6` | Older line, historical maintenance only. |
 
-> **This repository is a self-maintained fork**: forked from [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect), with the `upstream` remote kept so upstream fixes can be merged in. It has been maintained here since **0.7.7**; differences from upstream are listed below. Install with `github:yinchengjian/dsh-workbuddy-connect` — the npm package `dsh-workbuddy-connect` is still the upstream release and does not carry this fork's changes.
+> **This repository is a self-maintained fork**: forked from [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect), with the `upstream` remote kept so upstream fixes can be merged in. It has been maintained here since **0.7.7**; differences from upstream are listed below. Install it as `github:yinchengjian/dsh-workbuddy-connect#v0.7.7` (a tag-pinned git specifier — see the install section for why a bare package name cannot work here); the npm package `dsh-workbuddy-connect` is still the upstream release and does not carry this fork's changes.
 
 Release history (full records at [releases](https://github.com/yinchengjian/dsh-workbuddy-connect/releases); entries for 0.7.6 and earlier come from upstream):
 
@@ -164,7 +193,7 @@ Release history (full records at [releases](https://github.com/yinchengjian/dsh-
 - **0.7.0**: adapts to DSH 0.2.0's settings-service rework and drops 0.1.x support.
 - **0.6.5**: final release of the 0.1.x line.
 
-Pinned-version install example: `dsh plugin --profile web add github:yinchengjian/dsh-workbuddy-connect` (tracks this fork's `main`); pin with `github:yinchengjian/dsh-workbuddy-connect#v0.7.7` when you need a fixed revision.
+Install example (pick the tag matching your core): `dsh plugin --profile web add github:yinchengjian/dsh-workbuddy-connect#v0.7.7`. Tags are listed under [releases](https://github.com/yinchengjian/dsh-workbuddy-connect/releases); pinning a commit works too (`github:yinchengjian/dsh-workbuddy-connect#<sha>`), but **do not omit the ref** — that follows the latest commit on `main`, which may be an unreleased intermediate state.
 
 **Do not upgrade the profile-level `@earendil-works/pi-ai` to 1.x**: this plugin and the `0.2.0-rc.2` generation of the DSH core both require `^0.87.1` (bundled by the plugin since 0.7.2), and third-party plugin managers' "updatable" prompts do not check peer constraints — do not act on them ([#86](https://github.com/corrinehu/dsh-workbuddy-connect/issues/86)); likewise, do not blindly remove a leftover `overrides: {'@earendil-works/pi-ai': '0.87.1'}` until you have confirmed nothing else depends on it.
 

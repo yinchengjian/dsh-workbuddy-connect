@@ -86,6 +86,22 @@ The expanded card has three tabs: Status shows the account, token validity, tota
 
 ![Settings card showing account and remaining credit](assets/3.png)
 
+- **Web search (`web_search`)**: the plugin mounts a backend into DSH's web capability seam, so `web_search` reuses the WorkBuddy sign-in and calls the official client's own search route (`/agenttool/v1/search`). **No `DEEPSEEK_API_KEY` is required.** The previously pinned DeepSeek backend needs a separate API key that WorkBuddy users typically do not have, which is why every search used to fail with `WEB_PROVIDER_CREDENTIAL_MISSING`. The route is a dedicated retrieval call — one HTTP request rather than a model turn — so a search spends no extra model call or generated tokens.
+
+  A search follows the product the conversation is using: a CN conversation searches with the CN sign-in and an international one with the international sign-in, so the two accounts' credit is never mixed. If the conversation's own product is signed out but the other is signed in, the signed-in one answers instead of failing; when neither is signed in, the error names which app to sign in to. `web_fetch` is unaffected and keeps DSH's shipped anonymous HTTP backend.
+
+  To go back to DeepSeek search (or any other backend), re-pin it in your own patch layer — yours applies after the plugin's:
+
+  ```yaml
+  - id: web
+    name: '@deepseek-ai/dsh-web'
+    config:
+      searchProvider: deepseek-official   # or any installed backend id, e.g. Exa / Perplexity
+      fetchProvider: http
+  ```
+
+  Note that a patch replaces the whole row, so `fetchProvider` must be restated.
+
 ## Why reasoning levels work this way
 
 Information about WorkBuddy models' reasoning levels is currently split between upstream API responses and private UI logic in the client, while the model catalog changes quickly. If the plugin filled in one uniform set of levels for every model without an upstream declaration, it would need to keep chasing unpublished product logic with no stable contract.
@@ -119,6 +135,7 @@ dsh plugin --profile web exec dsh-workbuddy-connect doctor --provider workbuddy-
 - **The enterprise credit path currently covers the CN product only**: the international enterprise billing interface is unverified, so those accounts still read through the personal endpoint pending measurement. The enterprise branch could not be tested locally (the development machine holds a personal account); it was implemented from the official app's interface contract, and reports from enterprise users are welcome.
 - **Settings entries vary with the DSH version**: on 0.1.5 / 0.1.6 the plugin installs its settings sections as before (`authFile` / `authFileAI` stay readable from `settings.yaml` and the TUI `/settings`); on 0.1.7+ / 0.2.0 the settings service no longer offers that interface, so the plugin degrades to a settings-less provider — models, the picker, model visibility, and context windows keep working; only the "use the upstream's declared maximum context window" preference stops being persistable.
 - Relies on WorkBuddy client interfaces (not a public API); the plugin may need updates as WorkBuddy changes.
+- **Web search uses a private client route**: `web_search` calls `/agenttool/v1/search`, which — like the other routes — is a private client implementation (path and request body read out of the official client's own runtime code), not an official public API, so upstream changes may break it. It is verified only on macOS with a CN account on personal billing, against both `www.workbuddy.cn` and `copilot.tencent.com`. Search permission for international and enterprise accounts is unverified; please report if a search fails there. A search that succeeds with zero hits returns an empty source list rather than an error.
 
 ## Compatibility and release history
 

@@ -37,6 +37,10 @@ import type { WorkBuddyWebCatalog, WorkBuddyWebProbeSection } from './status-pat
 import { clearHostHeartbeat, writeHostHeartbeat } from './host-heartbeat.ts'
 import { WORKBUDDY_CONNECT_VERSION } from './version.ts'
 import { legacySettingsOf } from './legacy-settings.ts'
+import {
+  WorkBuddySearchProvider,
+  type WorkBuddySearchBackend,
+} from './search-provider.ts'
 import { CN_VARIANT, WORKBUDDY_VARIANTS, type WorkBuddyVariant } from './variants.ts'
 
 export { WORKBUDDY_PROVIDER, WORKBUDDY_STREAM_IDLE_TIMEOUT_MS, createWorkBuddyAdapter, type WorkBuddyAdapter } from './adapter.ts'
@@ -74,6 +78,13 @@ export {
   type ProbeSender,
 } from './probe.ts'
 export { WorkBuddyProbeService, type WorkBuddyProbeStatus } from './probe-service.ts'
+export {
+  WORKBUDDY_SEARCH_PROVIDER,
+  WorkBuddySearchProvider,
+  toWebResult,
+  type WorkBuddySearchBackend,
+  type WorkBuddySearchProviderOptions,
+} from './search-provider.ts'
 export {
   AI_VARIANT,
   CN_VARIANT,
@@ -663,6 +674,36 @@ export function apply(ctx: Context, config: Config): void {
     id => lastAccounts.get(id),
     atRestKeysFor(variant),
   ))
+
+  /**
+   * Offer WorkBuddy's own search to `ctx.web`, so `web_search` works with only
+   * the desktop App's sign-in.
+   *
+   * Injection is optional and deliberately so. The web seam is absent on any
+   * composition that never mounts it (a headless or minimal profile), and the
+   * plugin's models must keep working there: a search backend is an addition,
+   * not a prerequisite. `ctx.inject` waits for the service, so the registration
+   * lands whenever it appears and disposes with the plugin.
+   *
+   * `initiatingProvider` is read per search, not captured, so it reflects the
+   * conversation that is actually searching — the model route can change
+   * between turns (`/model`), and a captured value would pin every later search
+   * to whichever route existed at load.
+   */
+  ctx.inject(['web'], webCtx => {
+    const backends: WorkBuddySearchBackend[] = runtimes.map(runtime => ({
+      providerId: runtime.variant.id,
+      displayName: runtime.variant.displayName,
+      appName: runtime.variant.appName,
+      store: runtime.store,
+      client: runtime.client,
+    }))
+    const provider = new WorkBuddySearchProvider({
+      backends,
+      initiatingProvider: () => webCtx.get('agents')?.currentInitiator()?.session.requestContext()?.provider,
+    })
+    webCtx.web.registerSearchProvider(provider)
+  })
 
   // Same-origin routes backing each Plugin-configuration card; the webServer
   // service is optional (a headless profile serves no browser).

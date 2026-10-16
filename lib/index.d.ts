@@ -1,6 +1,7 @@
 import z from "@deepseek-ai/schemastery";
 import "@earendil-works/pi-ai";
 import { PiAiAdapter, PiAiAdapterOptions } from "@deepseek-ai/dsh-llm-pi-ai";
+import { WebSearchProvider, WebSearchRequest, WebSearchResult } from "@deepseek-ai/dsh-web";
 import { Context } from "@deepseek-ai/cordis";
 import { SettingsNamespace } from "@deepseek-ai/dsh-settings";
 import { AttachmentStore } from "@deepseek-ai/dsh-attachment";
@@ -415,6 +416,39 @@ type WorkBuddyChatResult = {
   kind: UpstreamErrorKind;
   message: string;
 };
+/** One web-search hit as the WorkBuddy search service returns it. */
+interface WorkBuddySearchHit {
+  /**
+   * Hit title. Optional because the service may omit or empty it, and the seam
+   * renders `title ?? hostname` — so an absent title is dropped rather than
+   * filled with a placeholder the seam would then display as if it were real.
+   */
+  title?: string;
+  url: string;
+  snippet?: string;
+}
+/** One search answer: the upstream's own provider label plus its citeable hits. */
+interface WorkBuddySearchResult {
+  /** Upstream's opaque provider label (the literal `"0"` was observed), when sent. */
+  provider?: string;
+  results: readonly WorkBuddySearchHit[];
+}
+/**
+ * Search answer: either hits or a classified failure.
+ *
+ * Deliberately shaped like {@link WorkBuddyChatResult} — this module reports,
+ * the caller decides. Keeping the `WebError` vocabulary out of the transport is
+ * what lets the wire be tested with no `ctx.web` seam present.
+ */
+type WorkBuddySearchOutcome = {
+  ok: true;
+  result: WorkBuddySearchResult;
+} | {
+  ok: false;
+  status: number;
+  kind: UpstreamErrorKind;
+  message: string;
+};
 /**
  * Reduce an upstream credits string to its language-neutral display form.
  *
@@ -489,6 +523,30 @@ declare class WorkBuddyUpstreamClient {
   chatStream(credential: WorkBuddyCredential, bodyJson: string, signal?: AbortSignal): Promise<WorkBuddyChatResult>;
   /** POST the token-refresh endpoint; the caller merges the outcome. */
   refreshToken(credential: WorkBuddyCredential): Promise<WorkBuddyRefreshOutcome>;
+  /**
+   * POST the agent-tool search route for one query.
+   *
+   * A dedicated retrieval call, not a model turn: the service returns JSON hits
+   * directly, so one search costs one request and consumes no chat credit for
+   * generation. That is why this transport exists at all — the DeepSeek-backed
+   * provider the patch also mounts spends a whole Messages turn per search.
+   *
+   * Reached with the same credential the chat path uses, so a WorkBuddy sign-in
+   * is all a search needs: no `DEEPSEEK_API_KEY` and no separate search key.
+   *
+   * Failures are *returned*, not thrown, exactly like {@link chatStream}: the
+   * caller turns them into `WebError`s with the seam's vocabulary. The one
+   * exception is a transport-level throw, which the caller must also handle.
+   *
+   * @param credential - the signed-in account to search with.
+   * @param query - the query text; the caller has already bounded it.
+   * @param signal - optional caller cancellation, composed with the route timeout.
+   * @param maxResults - the caller's source bound, used to ask the service for
+   *   no more than will be shown. Clamped to the transport ceiling; the seam
+   *   still enforces the bound, so this is purely a transfer optimization.
+   * @returns the parsed hits, or a classified failure.
+   */
+  search(credential: WorkBuddyCredential, query: string, signal?: AbortSignal, maxResults?: number): Promise<WorkBuddySearchOutcome>;
   /**
    * GET the personal model catalog.
    *
@@ -1594,6 +1652,108 @@ declare class WorkBuddyProbeService {
   probe(modelId: string, manualConsent?: boolean): Promise<WorkBuddyProbeStatus>;
 }
 //#endregion
+//#region src/search-provider.d.ts
+/**
+ * Stable provider id this backend registers under.
+ *
+ * Namespaced with `-search` because the suffix is what a pinned
+ * `searchProvider` in a profile patch names, and the plugin already owns the
+ * `workbuddy` / `workbuddy-ai` ids for its *model* routes: reusing one of those
+ * would read as if the model provider were also the search provider.
+ */
+declare const WORKBUDDY_SEARCH_PROVIDER = "workbuddy-search";
+/** One product's search backend: the credential store and transport it searches with. */
+interface WorkBuddySearchBackend {
+  /** Model-route id this backend answers for (`workbuddy` / `workbuddy-ai`). */
+  providerId: string;
+  /** Product heading for guidance copy, e.g. `WorkBuddy AI`. */
+  displayName: string;
+  /** The desktop app a signed-out user must sign in to. */
+  appName: string;
+  /** That product's credential store; `resolve()` reads the App's sign-in. */
+  store: WorkBuddyCredentialStore;
+  /** The shared upstream client that reaches that product's search route. */
+  client: WorkBuddyUpstreamClient;
+}
+/** Wiring the provider needs from the plugin. */
+interface WorkBuddySearchProviderOptions {
+  /** Every product variant, in preference order when nothing else selects one. */
+  backends: readonly WorkBuddySearchBackend[];
+  /**
+   * The model route of the conversation that initiated this search, or
+   * `undefined` outside an agent boundary.
+   *
+   * A conversation already using one product should search with that same
+   * product's account: a user signed in to both apps has two independent
+   * credits and two model groups, and letting the CN account answer for an
+   * international conversation (or the reverse) would silently cross them. This
+   * mirrors the DeepSeek provider, which reads the same route to decide between
+   * its account and API-key credentials.
+   */
+  initiatingProvider: () => string | undefined;
+}
+/**
+ * The WorkBuddy search backend.
+ *
+ * One instance serves every variant and picks a product per search, so the seam
+ * sees a single provider id to pin while both apps keep their own account.
+ */
+declare class WorkBuddySearchProvider implements WebSearchProvider {
+  private readonly options;
+  readonly id = "workbuddy-search";
+  constructor(options: WorkBuddySearchProviderOptions);
+  /**
+   * Whether this backend can be selected.
+   *
+   * Always true, and deliberately so: the plugin always mounts an account
+   * resolver, which is exactly the condition `dsh-web` documents a provider's
+   * cheap local check to establish. Whether an account is *actually* signed in
+   * cannot be answered without reading the App's credential files, which is
+   * asynchronous, and the seam's selection check is synchronous. So a
+   * signed-out search fails inside {@link search} with a specific
+   * `WEB_PROVIDER_CREDENTIAL_MISSING` message that names the app to sign in to,
+   * rather than making the pinned provider disappear and have the seam report
+   * the far less actionable `WEB_PROVIDER_CONFIGURED_UNAVAILABLE`. The shipped
+   * DeepSeek provider resolves this same tension the same way.
+   */
+  available(): boolean;
+  /**
+   * Run one search through the selected product's account.
+   *
+   * Selects the product first (the conversation's own route, else the first
+   * variant that answers), then makes exactly one upstream request: a variant
+   * that has no credential is skipped, but one whose search *fails* is not
+   * silently retried against the other account, because that would spend a
+   * second user's quota to paper over the first one's error.
+   *
+   * @param request - the query plus the seam's source bound.
+   * @param signal - caller cancellation, forwarded to the request.
+   * @returns normalized, deduplicated sources; the seam owns `maxResults` truncation.
+   */
+  search(request: WebSearchRequest, signal?: AbortSignal): Promise<WebSearchResult>;
+  /**
+   * Candidate products for one search: the conversation's own route first, then
+   * the rest in declaration order.
+   *
+   * The route match is a preference, not a filter. A conversation on the
+   * international group whose app is signed out should still be able to search
+   * with a signed-in CN account rather than fail, and a search is attributed by
+   * the account that actually answered it.
+   */
+  private orderedBackends;
+}
+/**
+ * Project the upstream's hit shape onto the seam's portable citation shape.
+ *
+ * `truncated` is always false: the request already asked for at most as many
+ * hits as the caller wanted, and the seam re-caps `sources` itself, so claiming
+ * truncation here would double-report it.
+ *
+ * No `publishedAt` is set: the search service returns no page-age field, and
+ * inventing one would make the seam lie about recency.
+ */
+declare function toWebResult(result: WorkBuddySearchResult): WebSearchResult;
+//#endregion
 //#region src/host-heartbeat.d.ts
 /**
  * Host-side heartbeat: a small JSON file written under `$DSH_HOME` once the
@@ -1732,4 +1892,4 @@ declare function visibilityAccountOf(credential: Pick<WorkBuddyCredential, 'uid'
  */
 declare function apply(ctx: Context, config: Config): void;
 //#endregion
-export { AI_VARIANT, type AppVersionInfo, CN_APP_VERSION_FILENAME, CN_VARIANT, type ChatIdentity, Config, FALLBACK_CN_APP_VERSION, FALLBACK_WORKBUDDY_AI_MODELS, FALLBACK_WORKBUDDY_MODELS, PROBE_EFFORT_CANDIDATES, type ProbeAttempt, type ProbeOutcome, type ProbeSender, type ResolveChatIdentityOptions, type UpstreamErrorKind, WORKBUDDY_AI_SETTINGS_NS, WORKBUDDY_APP_VERSION_FILENAME, WORKBUDDY_AUTH_FILENAME, WORKBUDDY_AUTH_FILE_ENV, WORKBUDDY_CATALOG_FILENAME, WORKBUDDY_HOST_HEARTBEAT_FILENAME, WORKBUDDY_PROBE_FILENAME, WORKBUDDY_PROVIDER, WORKBUDDY_SETTINGS_NS, WORKBUDDY_STREAM_IDLE_TIMEOUT_MS, WORKBUDDY_VARIANTS, WORKBUDDY_VISIBILITY_FILENAME, type WorkBuddyAdapter, type WorkBuddyAppVersionSource, type WorkBuddyAuthStatus, WorkBuddyCatalog, type WorkBuddyCatalogFetch, WorkBuddyCatalogStore, type WorkBuddyChatResult, type WorkBuddyCredential, WorkBuddyCredentialStore, type WorkBuddyCredits, type WorkBuddyEffort, type WorkBuddyHostHeartbeat, type WorkBuddyModelBilling, type WorkBuddyModelInfo, type WorkBuddyModelReasoning, type WorkBuddyProbeRecord, WorkBuddyProbeService, type WorkBuddyProbeStatus, WorkBuddyProbeStore, type WorkBuddyProbeValidation, type WorkBuddyPromotion, type WorkBuddyRefreshOutcome, type WorkBuddyShim, WorkBuddyUpstreamClient, type WorkBuddyUpstreamModel, type WorkBuddyVariant, WorkBuddyVisibilityStore, appUserAgent, apply, chatUserAgent, classifyUpstreamError, clearHostHeartbeat, createWorkBuddyAdapter, createWorkBuddyShim, defaultDesktopAuthCandidates, defaultDesktopAuthPath, desktopAuthCandidatesFor, fallbackChatIdentity, fingerprintModel, inject, installedAppVersion, isHeartbeatProcessAlive, modelWithCurrentPromotion, name, normalizeCredits, parseModelCatalog, parseWorkBuddyAuth, prepareChatBody, prepareCnChatBody, prepareInternationalChatBody, probeModel, processStartTimeMs, randomSentinel, readBundleVersion, readCliVersion, readHostHeartbeat, regionOf, resolveAppVersion, resolveChatIdentity, validAppVersion, validCliVersion, variantFor, visibilityAccountOf, workbuddyCatalogPath, workbuddyHostHeartbeatPath, workbuddyOwnAuthPath, workbuddyProbePath, workbuddyVisibilityPath };
+export { AI_VARIANT, type AppVersionInfo, CN_APP_VERSION_FILENAME, CN_VARIANT, type ChatIdentity, Config, FALLBACK_CN_APP_VERSION, FALLBACK_WORKBUDDY_AI_MODELS, FALLBACK_WORKBUDDY_MODELS, PROBE_EFFORT_CANDIDATES, type ProbeAttempt, type ProbeOutcome, type ProbeSender, type ResolveChatIdentityOptions, type UpstreamErrorKind, WORKBUDDY_AI_SETTINGS_NS, WORKBUDDY_APP_VERSION_FILENAME, WORKBUDDY_AUTH_FILENAME, WORKBUDDY_AUTH_FILE_ENV, WORKBUDDY_CATALOG_FILENAME, WORKBUDDY_HOST_HEARTBEAT_FILENAME, WORKBUDDY_PROBE_FILENAME, WORKBUDDY_PROVIDER, WORKBUDDY_SEARCH_PROVIDER, WORKBUDDY_SETTINGS_NS, WORKBUDDY_STREAM_IDLE_TIMEOUT_MS, WORKBUDDY_VARIANTS, WORKBUDDY_VISIBILITY_FILENAME, type WorkBuddyAdapter, type WorkBuddyAppVersionSource, type WorkBuddyAuthStatus, WorkBuddyCatalog, type WorkBuddyCatalogFetch, WorkBuddyCatalogStore, type WorkBuddyChatResult, type WorkBuddyCredential, WorkBuddyCredentialStore, type WorkBuddyCredits, type WorkBuddyEffort, type WorkBuddyHostHeartbeat, type WorkBuddyModelBilling, type WorkBuddyModelInfo, type WorkBuddyModelReasoning, type WorkBuddyProbeRecord, WorkBuddyProbeService, type WorkBuddyProbeStatus, WorkBuddyProbeStore, type WorkBuddyProbeValidation, type WorkBuddyPromotion, type WorkBuddyRefreshOutcome, type WorkBuddySearchBackend, WorkBuddySearchProvider, type WorkBuddySearchProviderOptions, type WorkBuddyShim, WorkBuddyUpstreamClient, type WorkBuddyUpstreamModel, type WorkBuddyVariant, WorkBuddyVisibilityStore, appUserAgent, apply, chatUserAgent, classifyUpstreamError, clearHostHeartbeat, createWorkBuddyAdapter, createWorkBuddyShim, defaultDesktopAuthCandidates, defaultDesktopAuthPath, desktopAuthCandidatesFor, fallbackChatIdentity, fingerprintModel, inject, installedAppVersion, isHeartbeatProcessAlive, modelWithCurrentPromotion, name, normalizeCredits, parseModelCatalog, parseWorkBuddyAuth, prepareChatBody, prepareCnChatBody, prepareInternationalChatBody, probeModel, processStartTimeMs, randomSentinel, readBundleVersion, readCliVersion, readHostHeartbeat, regionOf, resolveAppVersion, resolveChatIdentity, toWebResult, validAppVersion, validCliVersion, variantFor, visibilityAccountOf, workbuddyCatalogPath, workbuddyHostHeartbeatPath, workbuddyOwnAuthPath, workbuddyProbePath, workbuddyVisibilityPath };

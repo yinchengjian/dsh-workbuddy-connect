@@ -51,6 +51,7 @@ export default [
         '@deepseek-ai/dsh-llm',
         '@deepseek-ai/dsh-llm-pi-ai',
         '@deepseek-ai/dsh-settings',
+        '@deepseek-ai/dsh-web',
       ],
     },
   },

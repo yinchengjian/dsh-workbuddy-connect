@@ -193,6 +193,36 @@ export type WorkBuddyChatResult =
   | { ok: true; response: Response }
   | { ok: false; status: number; kind: UpstreamErrorKind; message: string }
 
+/** One web-search hit as the WorkBuddy search service returns it. */
+export interface WorkBuddySearchHit {
+  /**
+   * Hit title. Optional because the service may omit or empty it, and the seam
+   * renders `title ?? hostname` — so an absent title is dropped rather than
+   * filled with a placeholder the seam would then display as if it were real.
+   */
+  title?: string
+  url: string
+  snippet?: string
+}
+
+/** One search answer: the upstream's own provider label plus its citeable hits. */
+export interface WorkBuddySearchResult {
+  /** Upstream's opaque provider label (the literal `"0"` was observed), when sent. */
+  provider?: string
+  results: readonly WorkBuddySearchHit[]
+}
+
+/**
+ * Search answer: either hits or a classified failure.
+ *
+ * Deliberately shaped like {@link WorkBuddyChatResult} — this module reports,
+ * the caller decides. Keeping the `WebError` vocabulary out of the transport is
+ * what lets the wire be tested with no `ctx.web` seam present.
+ */
+export type WorkBuddySearchOutcome =
+  | { ok: true; result: WorkBuddySearchResult }
+  | { ok: false; status: number; kind: UpstreamErrorKind; message: string }
+
 const CN_CHAT_BASE = 'https://copilot.tencent.com'
 const CN_BILLING_BASE = 'https://www.codebuddy.cn'
 const GLOBAL_BASE = 'https://www.workbuddy.ai'
@@ -232,6 +262,40 @@ function describeShape(document: unknown): string {
 const CLIENT_UA = 'CLI/2.63.2 CodeBuddy/2.63.2'
 const JSON_TIMEOUT_MS = 30_000
 const ERROR_BODY_LIMIT = 4096
+
+/**
+ * The agent-tool search route, relative to a region's chat base.
+ *
+ * Read out of the official client's own runtime
+ * (`app.asar.unpacked/cli/dist/codebuddy-lite-wb.mjs`, `WEB_SEARCH_API_PATH`),
+ * where the `WebSearch` agent tool POSTs to `${endpoint}/agenttool/v1/search`.
+ * It is a dedicated retrieval endpoint: it answers JSON directly and never
+ * runs a model, so a search costs one request rather than one model turn — the
+ * property that makes it worth preferring over the DeepSeek Messages-based
+ * provider this plugin's patch also mounts.
+ */
+const SEARCH_PATH = '/agenttool/v1/search'
+
+/**
+ * Search budget, in milliseconds, for one `WebSearch` call.
+ *
+ * Matches the official client's own `WEB_SEARCH_TIMEOUT_MS` (20 s), and is
+ * deliberately below `tool-web`'s 60 s `searchTimeoutMs` so the transport's
+ * own timeout is what reports a stalled search, with the seam's caller-level
+ * cancellation left as the outer bound.
+ */
+const SEARCH_TIMEOUT_MS = 20_000
+
+/**
+ * Upstream cap on returned hits.
+ *
+ * The client hard-codes `max_results: 5`; measurement shows the service answers
+ * more when asked (12 hits for `max_results: 20`), so the client's constant is
+ * a product choice rather than a server limit. The seam truncates to the
+ * caller's `maxResults` regardless, so this only caps what one request may
+ * transfer — asking for more than we would ever show only costs bandwidth.
+ */
+const SEARCH_MAX_RESULTS = 20
 
 /** Insufficient-credit markers, ASCII lowercase plus the original Chinese. */
 const HARD_CREDIT_MARKERS: readonly string[] = [
@@ -543,6 +607,39 @@ function identityHeaders(credential: WorkBuddyCredential): Record<string, string
 }
 
 /**
+ * Headers for the agent-tool search route.
+ *
+ * Shares {@link commonHeaders} with every other upstream call, so the search
+ * presents the same Origin/Referer/UA channel the rest of the plugin does.
+ *
+ * Beyond the bearer token the official client also sends `X-User-Id`,
+ * `X-Department-Info`, the `X-Conversation-*` trio, and an `X-IDE-*` block.
+ * Measurement on both region bases shows the endpoint answering `200` with a
+ * bare `Authorization` header, so none of those are required here and this
+ * function sends only the identity pair the *other* authenticated routes in
+ * this plugin already prove meaningful (`X-User-Id`, plus the enterprise pair
+ * when the account has one). That keeps enterprise scoping intact if the
+ * service starts honouring it, without inventing a department value from a
+ * field the plugin does not carry.
+ *
+ * The credential's `refreshToken` deliberately never appears here, matching the
+ * chat path's red line: only `X-Refresh-Token` on the refresh route carries it.
+ */
+function searchHeaders(credential: WorkBuddyCredential): Record<string, string> {
+  return {
+    ...commonHeaders(credential),
+    'Authorization': `Bearer ${credential.accessToken}`,
+    'Accept': 'application/json',
+    'Content-Type': 'application/json; charset=utf-8',
+    ...credential.uid === '' ? {} : { 'X-User-Id': credential.uid },
+    ...credential.enterpriseId === undefined || credential.enterpriseId === ''
+      ? {}
+      : { 'X-Enterprise-Id': credential.enterpriseId, 'X-Tenant-Id': credential.enterpriseId },
+    ...credential.domain === '' ? {} : { 'X-Domain': credential.domain },
+  }
+}
+
+/**
  * Normalize an OpenAI chat-completions body for the WorkBuddy upstream:
  * force `stream: true` (the upstream rejects non-streaming), flatten
  * `tool_choice` (the upstream's field is a string; object forms return 400),
@@ -567,6 +664,48 @@ export function prepareChatBody(source: string): string {
   normalizeDeveloperRole(obj)
   normalizeToolChoice(obj)
   return JSON.stringify(obj)
+}
+
+/**
+ * Parse the agent-tool search response document.
+ *
+ * The service answers `{ query, type, provider, results[], total_results,
+ * response_time_ms }` where each result carries `title`, `url`, and `snippet`.
+ * Every field is re-validated rather than trusted: the document is external
+ * input, and a malformed row must be dropped (a hit with no URL is useless to
+ * the seam, whose {@link WebSearchSource} requires one) instead of failing the
+ * whole search or emitting an empty citation.
+ *
+ * @param document - the parsed JSON body.
+ * @returns the normalized hits, or undefined when the body is not a search answer.
+ */
+export function parseSearchResponse(document: unknown): WorkBuddySearchResult | undefined {
+  if (typeof document !== 'object' || document === null || Array.isArray(document)) return undefined
+  const record = document as Record<string, unknown>
+  const raw = record['results']
+  if (!Array.isArray(raw)) return undefined
+  const results: WorkBuddySearchHit[] = []
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue
+    const hit = entry as Record<string, unknown>
+    const url = hit['url']
+    if (typeof url !== 'string' || url === '') continue
+    const title = hit['title']
+    const snippet = hit['snippet']
+    results.push({
+      // The official renderer substitutes "Untitled" for a missing title; the
+      // seam renders `title ?? hostname`, so an empty title is dropped instead
+      // and the hostname becomes the honest label.
+      ...typeof title === 'string' && title !== '' ? { title } : {},
+      url,
+      ...typeof snippet === 'string' && snippet !== '' ? { snippet } : {},
+    })
+  }
+  const provider = record['provider']
+  return {
+    ...typeof provider === 'string' && provider !== '' ? { provider } : {},
+    results,
+  }
 }
 
 /** Rewrite `role: "developer"` messages to `role: "system"` (upstream rejects developer). */
@@ -876,6 +1015,92 @@ export class WorkBuddyUpstreamClient {
     if (typeof data['expiresIn'] === 'number' && data['expiresIn'] > 0) outcome.expiresInSec = data['expiresIn']
     if (typeof data['domain'] === 'string' && data['domain'] !== '') outcome.domain = data['domain']
     return outcome
+  }
+
+  /**
+   * POST the agent-tool search route for one query.
+   *
+   * A dedicated retrieval call, not a model turn: the service returns JSON hits
+   * directly, so one search costs one request and consumes no chat credit for
+   * generation. That is why this transport exists at all — the DeepSeek-backed
+   * provider the patch also mounts spends a whole Messages turn per search.
+   *
+   * Reached with the same credential the chat path uses, so a WorkBuddy sign-in
+   * is all a search needs: no `DEEPSEEK_API_KEY` and no separate search key.
+   *
+   * Failures are *returned*, not thrown, exactly like {@link chatStream}: the
+   * caller turns them into `WebError`s with the seam's vocabulary. The one
+   * exception is a transport-level throw, which the caller must also handle.
+   *
+   * @param credential - the signed-in account to search with.
+   * @param query - the query text; the caller has already bounded it.
+   * @param signal - optional caller cancellation, composed with the route timeout.
+   * @param maxResults - the caller's source bound, used to ask the service for
+   *   no more than will be shown. Clamped to the transport ceiling; the seam
+   *   still enforces the bound, so this is purely a transfer optimization.
+   * @returns the parsed hits, or a classified failure.
+   */
+  async search(
+    credential: WorkBuddyCredential,
+    query: string,
+    signal?: AbortSignal,
+    maxResults?: number,
+  ): Promise<WorkBuddySearchOutcome> {
+    const timeout = AbortSignal.timeout(SEARCH_TIMEOUT_MS)
+    // Compose rather than replace: the caller's cancellation must still reach
+    // the request, and `AbortSignal.any` keeps whichever fires first.
+    const composed = signal === undefined ? timeout : AbortSignal.any([signal, timeout])
+    const limit = maxResults === undefined || maxResults <= 0
+      ? SEARCH_MAX_RESULTS
+      : Math.min(maxResults, SEARCH_MAX_RESULTS)
+    let response: Response
+    try {
+      response = await fetch(`${chatBase(credential)}${SEARCH_PATH}`, {
+        method: 'POST',
+        headers: searchHeaders(credential),
+        body: JSON.stringify({ query, type: 'text2text', max_results: limit }),
+        signal: composed,
+      })
+    } catch (error: unknown) {
+      // A caller cancellation is not an upstream failure; the provider maps it
+      // to the seam's cancellation code, so it is reported distinctly here.
+      return { ok: false, status: 0, kind: 'server', message: `transport error: ${String(error)}` }
+    }
+    if (!response.ok) {
+      const text = (await response.text()).slice(0, ERROR_BODY_LIMIT)
+      return {
+        ok: false,
+        status: response.status,
+        kind: classifyUpstreamError(response.status, text),
+        message: text,
+      }
+    }
+    let document: unknown
+    try {
+      document = await response.json()
+    } catch (error: unknown) {
+      return { ok: false, status: response.status, kind: 'server', message: `unparseable search response: ${String(error)}` }
+    }
+    // The route answers `{code, msg}` on a rejected query (HTTP 400 with
+    // `freshness`, measured); a body carrying a non-zero code is a failure even
+    // when the status was 200.
+    if (typeof document === 'object' && document !== null && !Array.isArray(document)) {
+      const code = (document as Record<string, unknown>)['code']
+      if (typeof code === 'number' && code !== 0) {
+        const message = (document as Record<string, unknown>)['msg']
+        return {
+          ok: false,
+          status: 400,
+          kind: 'client',
+          message: typeof message === 'string' ? message : `search rejected with code ${code}`,
+        }
+      }
+    }
+    const result = parseSearchResponse(document)
+    if (result === undefined) {
+      return { ok: false, status: response.status, kind: 'server', message: 'search response carried no results array' }
+    }
+    return { ok: true, result }
   }
 
   /**

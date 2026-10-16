@@ -4,3 +4,35 @@
 - insert:
     - id: llm-workbuddy
       name: dsh-workbuddy-connect
+
+# Point web search at WorkBuddy's own search route.
+#
+# A patch replaces the targeted row's whole `config` rather than merging into
+# it, so `fetchProvider` is restated from the base layer (the anonymous HTTP
+# fetch is unaffected by this change and stays the fetch backend).
+#
+# Why this is pinned rather than left to auto-selection: the base layer already
+# pins `deepseek-official`, so without this row the plugin's new backend would
+# simply never be selected and every search would keep failing for want of a
+# DeepSeek key. (Dropping the pin is not the alternative either: this plugin
+# registers a second backend, and with two usable providers an unpinned seam
+# answers WEB_PROVIDER_AMBIGUOUS.) One explicit pin is what gives the seam a
+# single answer.
+#
+# Why WorkBuddy's own search is the right default for this plugin: it
+# authenticates with the same desktop sign-in the plugin already reuses for
+# chat, so `web_search` works on a machine that has no DEEPSEEK_API_KEY — which
+# is the common case for the WorkBuddy audience, and previously surfaced as
+# WEB_PROVIDER_CREDENTIAL_MISSING on every search. It is also a dedicated
+# retrieval call, so a search costs one HTTP request instead of the full
+# Messages model turn `deepseek-official` spends per search.
+#
+# The `web-search-deepseek` row is left mounted and configured: a deployment
+# that would rather search with DeepSeek can re-pin `searchProvider:
+# deepseek-official` in its own patch layer (which applies after this one) and
+# supply a key; the plugin does not remove that option.
+- id: web
+  name: '@deepseek-ai/dsh-web'
+  config:
+    searchProvider: workbuddy-search
+    fetchProvider: http

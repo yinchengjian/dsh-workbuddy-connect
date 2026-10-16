@@ -86,6 +86,22 @@ dsh --profile dsh-tui
 
 ![设置卡片显示账号与剩余积分](assets/3.png)
 
+- **网页搜索（`web_search`）**：插件接入了 DSH 的 web 能力 seam，`web_search` 复用 WorkBuddy 的登录态直接调用官方客户端的搜索接口（`/agenttool/v1/search`），因此**不需要 `DEEPSEEK_API_KEY`**。此前默认的 DeepSeek 搜索后端要求单独的 API Key，WorkBuddy 用户通常没有，于是每次搜索都会报 `WEB_PROVIDER_CREDENTIAL_MISSING`。该接口是专用检索调用（一次 HTTP 请求），不是模型回合，所以一次搜索不会额外消耗一次模型调用与生成 token。
+
+  搜索跟随当前会话所用的那一版账号：国内版会话用国内版登录态，国际版会话用国际版登录态，两版积分互不混用；若会话所用那一版未登录而另一版已登录，会自动改用已登录的那一版，而不是直接失败。两版都未登录时，错误信息会指明该去哪一版 App 登录。`web_fetch` 不受影响，仍由 DSH 自带的匿名 HTTP 后端提供。
+
+  想改回 DeepSeek 搜索（或其他后端）时，在你自己的 patch 层里重新指定即可——你的 patch 会应用在插件之后：
+
+  ```yaml
+  - id: web
+    name: '@deepseek-ai/dsh-web'
+    config:
+      searchProvider: deepseek-official   # 或 Exa / Perplexity 等已安装后端的 id
+      fetchProvider: http
+  ```
+
+  注意该行是**整行替换**，`fetchProvider` 需要一并写上。
+
 ## 推理档位为什么这样设计
 
 WorkBuddy 中模型的推理档位信息目前分散在上游接口与客户端自身的私有 UI 逻辑中，且模型目录变化很快。若插件根据经验为所有未声明模型补齐统一档位，就需要持续追赶这些未公开、没有稳定契约的产品逻辑。
@@ -120,6 +136,7 @@ dsh plugin --profile web exec dsh-workbuddy-connect doctor --provider workbuddy-
 - **企业账号积分目前仅覆盖国内版**：国际版企业账号的计费接口尚未验证，仍按个人版接口读取；待有实测结论后再扩展。企业账号分支在本机无法自测（开发机为个人账号），依据官方 App 的接口契约实现，欢迎企业账号用户反馈实测结果。
 - **设置入口随 DSH 版本而异**：0.1.5 / 0.1.6 上插件照常安装 `authFile` / `authFileAI` 等设置分区（`settings.yaml` 与 TUI `/settings` 均可读写）；0.1.7+ / 0.2.0 的设置服务不再提供该接口，插件降级为无设置项的 provider——模型、选择器、模型显隐与上下文窗口照常工作，只是「使用上游声明的最大上下文窗口」这一偏好不再可持久化。
 - 依赖 WorkBuddy 客户端接口（非官方开放 API），WorkBuddy 更新后插件可能需要随之调整。
+- **网页搜索走客户端私有接口**：`web_search` 调用的 `/agenttool/v1/search` 与其余接口一样属于客户端私有实现（接口路径与请求体取自官方客户端运行时代码），并非官方开放 API，上游改动可能使其失效。目前仅在 macOS、国内版账号 + 个人版计费下实测通过（含 `www.workbuddy.cn` 与 `copilot.tencent.com` 两个域名）；国际版账号与企业账号的搜索权限未实测，如遇失败请反馈。搜索请求成功但返回 0 条结果时，seam 会如实返回空来源列表，而不是报错。
 
 ## 版本兼容与历史版本
 

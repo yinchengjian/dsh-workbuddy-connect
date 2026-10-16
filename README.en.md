@@ -11,11 +11,11 @@ Brings the models available in your signed-in WorkBuddy / WorkBuddy AI desktop a
 **Recommended: let an Agent you already have do the install** — any assistant with terminal and file access (the DSH agent, Codex, Claude Code, Cursor, …). Paste this to it verbatim:
 
 ```text
-Please install and verify the DSH (DeepSeek Harness) plugin dsh-workbuddy-connect for me (project: https://github.com/corrinehu/dsh-workbuddy-connect).
+Please install and verify the DSH (DeepSeek Harness) plugin dsh-workbuddy-connect for me (project: https://github.com/yinchengjian/dsh-workbuddy-connect).
 Start by reading the project README and confirming which interface I actually use (Web / Desktop / TUI) and its DSH core version — for the Desktop app, the bundled core, never the standalone CLI's version.
-Then install from the official npm package per the version mapping (0.2.0-rc.2 -> 0.7.6, rc.1 -> 0.7.0, 0.1.5-0.1.7 -> 0.6.5), preferring a locally supported non-market channel; on some Desktop distributions (the official Electron app in particular) the profile is app-managed and rules vary by distribution — check mine first, then explore its compliant install route, but never bypass its validation.
+Then install per the version mapping (0.2.0-rc.2 -> 0.7.7; this project is a self-maintained fork from 0.7.7 on, so install it from GitHub source rather than the corrinehu package on npm), preferring a locally supported non-market channel; on some Desktop distributions (the official Electron app in particular) the profile is app-managed and rules vary by distribution — check mine first, then explore its compliant install route, but never bypass its validation.
 Ask for my consent and make backups before changing any local files or configuration.
-After installing, verify the WorkBuddy group appears in the model picker and walk me through one short conversation.
+After installing, verify the WorkBuddy group appears in the model picker, walk me through one short conversation, and run one web_search to confirm web search works.
 If the Desktop install still fails generation validation (e.g. the @types/retry false positive), report it honestly, reference upstream dataelement/dsh-desktop#688, and suggest switching to the standalone Web / TUI — do not modify dependency packages or bypass the check.
 ```
 
@@ -23,7 +23,7 @@ Core-to-plugin quick reference (full table in "Compatibility and release history
 
 | DSH core | Recommended plugin |
 |---|---|
-| 0.2.0-rc.2 | 0.7.6 (npm latest) |
+| 0.2.0-rc.2 | 0.7.7 (this fork's current release) |
 | 0.2.0-rc.1 | 0.7.0 |
 | 0.1.5 – 0.1.7 | 0.6.5 |
 
@@ -31,8 +31,9 @@ Core-to-plugin quick reference (full table in "Compatibility and release history
 <summary>Manual install (command line, Web / TUI only)</summary>
 
 ```sh
-# Web (pin per your actual core — example: 0.2.0-rc.2 -> 0.7.6; or install from source via github:corrinehu/dsh-workbuddy-connect)
-dsh plugin --profile web add dsh-workbuddy-connect@0.7.6
+# Web (install from GitHub source: this fork; the npm package dsh-workbuddy-connect
+# is still the upstream release and does not carry this fork's search change)
+dsh plugin --profile web add github:yinchengjian/dsh-workbuddy-connect
 dsh web
 
 # TUI (example for a 0.1.x core; that profile needs pnpm 11, e.g. npx pnpm@11)
@@ -143,14 +144,17 @@ The plugin version must match the DSH core — a mismatched combination fails to
 
 | DSH core | Recommended plugin | Notes |
 |---|---|---|
-| `0.2.0-rc.2` | `0.7.6` (npm latest) | Current line; fixes enterprise catalog gaps and international chat requests blocked by the upstream channel check. Avoid 0.7.2 with its registry regression. |
+| `0.2.0-rc.2` | `0.7.7` (this fork) | This fork's current line; adds WorkBuddy web search on top of 0.7.6. Avoid 0.7.2 with its registry regression. |
 | `0.2.0-rc.1` | `0.7.0` | 0.7.1 drops rc.1 support; stay on this version. |
 | `0.1.5` – `0.1.7` | `0.6.5` | Final release for the old cores; 0.7.0 targets 0.2.0 only. |
 | `0.1.2-rc.1` | `0.3.1` | Older line, historical maintenance only. |
 | `0.1.1-rc.2` | `0.2.6` | Older line, historical maintenance only. |
 
-Release history (full records at [releases](https://github.com/corrinehu/dsh-workbuddy-connect/releases)):
+> **This repository is a self-maintained fork**: forked from [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect), with the `upstream` remote kept so upstream fixes can be merged in. It has been maintained here since **0.7.7**; differences from upstream are listed below. Install with `github:yinchengjian/dsh-workbuddy-connect` — the npm package `dsh-workbuddy-connect` is still the upstream release and does not carry this fork's changes.
 
+Release history (full records at [releases](https://github.com/yinchengjian/dsh-workbuddy-connect/releases); entries for 0.7.6 and earlier come from upstream):
+
+- **0.7.7**: **adds web search through WorkBuddy's own backend**, so `web_search` no longer needs a `DEEPSEEK_API_KEY`. The previously pinned DeepSeek backend requires a separate API key that WorkBuddy users typically do not have, which made every search fail with `WEB_PROVIDER_CREDENTIAL_MISSING`; the plugin now reuses the app's sign-in to call the official client's `/agenttool/v1/search` (one HTTP request, spending no extra model call or generated tokens). A search follows the product the conversation uses and falls back to the signed-in one when that product is signed out, naming which app to sign in to when neither is.
 - **0.7.6**: fixes enterprise accounts missing `glm-5.3-flashx` from the model catalog ([#123](https://github.com/corrinehu/dsh-workbuddy-connect/issues/123)), and fixes international chat requests being blocked by the upstream channel check ([#139](https://github.com/corrinehu/dsh-workbuddy-connect/issues/139) / [#142](https://github.com/corrinehu/dsh-workbuddy-connect/issues/142)).
 - **0.7.5**: restores composer controls after session switching ([#125](https://github.com/corrinehu/dsh-workbuddy-connect/issues/125) / [#132](https://github.com/corrinehu/dsh-workbuddy-connect/issues/132)), fixes WSL helper environment forwarding ([#133](https://github.com/corrinehu/dsh-workbuddy-connect/issues/133)), and adds community projects to both READMEs.
 - **0.7.4**: Windows diagnostics and stability improvements: accurate classification of oversized registry-subprocess output, cross-platform test-assumption fixes ([#62](https://github.com/corrinehu/dsh-workbuddy-connect/issues/62)), and a reworked install section.
@@ -160,7 +164,7 @@ Release history (full records at [releases](https://github.com/corrinehu/dsh-wor
 - **0.7.0**: adapts to DSH 0.2.0's settings-service rework and drops 0.1.x support.
 - **0.6.5**: final release of the 0.1.x line.
 
-Pinned-version install example: `dsh plugin --profile web add dsh-workbuddy-connect@0.7.6`.
+Pinned-version install example: `dsh plugin --profile web add github:yinchengjian/dsh-workbuddy-connect` (tracks this fork's `main`); pin with `github:yinchengjian/dsh-workbuddy-connect#v0.7.7` when you need a fixed revision.
 
 **Do not upgrade the profile-level `@earendil-works/pi-ai` to 1.x**: this plugin and the `0.2.0-rc.2` generation of the DSH core both require `^0.87.1` (bundled by the plugin since 0.7.2), and third-party plugin managers' "updatable" prompts do not check peer constraints — do not act on them ([#86](https://github.com/corrinehu/dsh-workbuddy-connect/issues/86)); likewise, do not blindly remove a leftover `overrides: {'@earendil-works/pi-ai': '0.87.1'}` until you have confirmed nothing else depends on it.
 

@@ -59,13 +59,15 @@ describe('peer manifest pins the verified DSH cores', () => {
    * nobody verified. Since 0.7.0 the seven DSH service peers are pinned to
    * exactly the cores this release was smoke-tested on; extending support
    * means editing this list after a real run, not letting a caret do it.
-   * Since 0.7.1 the list is rc.2 alone: rc.1 cannot be smoke-tested anymore
-   * alongside it, and an untested arm is support nobody verified.
+   * Since 0.7.8 the single verified arm is dsh 0.2.1-rc.2: dsh 0.2.1 changed
+   * the core <-> plugin surface (pi-ai moved to the 1.x generation and the
+   * `web` seam's provider ids became volatile properties), so a 0.2.0-rc.2
+   * pin is a different, untested pairing.
    *
    * #74's lesson on top of it: pi-ai must NOT be a dual-arm range. An
    * in-place upgrade from a 0.6.x-era pnpm profile keeps satisfying
    * `^0.85.1 || ^0.87.1` with the old 0.85.1 install, reproducing #69's
-   * two-generation mixing against an rc.2 host that ships 0.87.1.
+   * two-generation mixing against the host that ships 0.87.1.
    *
    * #92 extended that lesson one step further: even the caret-free `^0.87.1`
    * peer range was not enough, because a peer is only a claim about what the
@@ -87,7 +89,7 @@ describe('peer manifest pins the verified DSH cores', () => {
       readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
     ) as { peerDependencies: Record<string, string> }
     for (const name of DSH_SERVICE_PEERS) {
-      expect(pkg.peerDependencies[name], `${name} missing from peerDependencies`).toBe('0.2.0-rc.2')
+      expect(pkg.peerDependencies[name], `${name} missing from peerDependencies`).toBe('0.2.1-rc.2')
     }
   })
 
@@ -105,13 +107,13 @@ describe('peer manifest pins the verified DSH cores', () => {
     // pi-ai at the profile root wins bare-specifier resolution and the plugin
     // loads the wrong generation. A regular dependency installs beside the
     // plugin and resolves first, whatever the profile root holds.
-    expect(pkg.dependencies?.['@earendil-works/pi-ai']).toBe('0.87.1')
+    expect(pkg.dependencies?.['@earendil-works/pi-ai']).toBe('1.3.0')
     expect(
       pkg.peerDependencies['@earendil-works/pi-ai'],
       'pi-ai must not also be a peer: a peer declaration is what allowed the hoisted copy to win',
     ).toBeUndefined()
     // The dev entry keeps local builds and tests on the same generation, and
     // stays exact so no caret can widen the supported set by itself.
-    expect(pkg.devDependencies['@earendil-works/pi-ai']).toBe('0.87.1')
+    expect(pkg.devDependencies['@earendil-works/pi-ai']).toBe('1.3.0')
   })
 })

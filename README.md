@@ -13,7 +13,7 @@
 ```text
 请帮我安装并验证 DSH（DeepSeek Harness）插件 dsh-workbuddy-connect（项目地址：https://github.com/yinchengjian/dsh-workbuddy-connect）：
 先阅读项目 README，确认我实际使用的界面（Web / Desktop / TUI）与 DSH 内核版本，桌面版以 App 内置核心为准，不要用独立 CLI 的版本代替；
-再按版本对应关系安装（0.2.0-rc.2 → `github:yinchengjian/dsh-workbuddy-connect#v0.7.7`。本项目自 0.7.7 起为自维护 fork，安装请直接从 GitHub 源码装、并且**必须带 tag**，不要装 npm 上 corrinehu 的原包，也不要用不带 ref 的裸 GitHub 地址——那会跟随 main 的最新提交），优先走本机受支持的非插件市场渠道；部分 Desktop 发行版（尤其官方 Electron 版）的 profile 由 App 管理，各发行版规则未必相同，先确认我所用的发行版，再探查其合规的安装方式，但不得绕过其校验；
+再按版本对应关系安装（0.2.1-rc.2 → `github:yinchengjian/dsh-workbuddy-connect#v0.7.8`；0.2.0-rc.2 → `#v0.7.7`。本项目自 0.7.7 起为自维护 fork，安装请直接从 GitHub 源码装、并且**必须带 tag**，不要装 npm 上 corrinehu 的原包，也不要用不带 ref 的裸 GitHub 地址——那会跟随 main 的最新提交），优先走本机受支持的非插件市场渠道；部分 Desktop 发行版（尤其官方 Electron 版）的 profile 由 App 管理，各发行版规则未必相同，先确认我所用的发行版，再探查其合规的安装方式，但不得绕过其校验；
 任何本地文件或配置改动，先征得我同意并做好备份；
 装完后验证模型选择器里出现 WorkBuddy 分组，并陪我完成一次简短对话，再用一次 web_search 确认联网搜索可用；
 若 Desktop 安装仍因 generation 校验失败（如 @types/retry 误报），请如实报告、参照上游 dataelement/dsh-desktop#688，并建议我改用独立的 Web / TUI，不要修改依赖包或绕过校验。
@@ -23,7 +23,8 @@
 
 | DSH 内核 | 推荐插件版 | 安装写法 |
 |---|---|---|
-| 0.2.0-rc.2 | 0.7.7（本 fork 当前版） | `github:yinchengjian/dsh-workbuddy-connect#v0.7.7` |
+| 0.2.1-rc.2 | 0.7.8（本 fork 当前版） | `github:yinchengjian/dsh-workbuddy-connect#v0.7.8` |
+| 0.2.0-rc.2 | 0.7.7 | `github:yinchengjian/dsh-workbuddy-connect#v0.7.7` |
 | 0.2.0-rc.1 | 0.7.0 | `dsh-workbuddy-connect@0.7.0`（npm，上游） |
 | 0.1.5 – 0.1.7 | 0.6.5 | `dsh-workbuddy-connect@0.6.5`（npm，上游） |
 
@@ -174,16 +175,18 @@ dsh plugin --profile web exec dsh-workbuddy-connect doctor --provider workbuddy-
 
 | DSH 内核 | 推荐插件版 | 注意事项 |
 |---|---|---|
-| `0.2.0-rc.2` | `0.7.7`（本 fork） | 本 fork 当前线；在 0.7.6 基础上接入 WorkBuddy 网页搜索。勿停留在有注册表回归的 0.7.2。 |
+| `0.2.1-rc.2` | `0.7.8`（本 fork） | 本 fork 当前线；仅适配 0.2.1 内核，**不要**装到 0.2.0 上（反之亦然）：错配会被内核以 `skipping profile bundle … incompatible` 跳过。 |
+| `0.2.0-rc.2` | `0.7.7` | 0.2.0 线最终版；在 0.7.6 基础上接入 WorkBuddy 网页搜索。勿停留在有注册表回归的 0.7.2。 |
 | `0.2.0-rc.1` | `0.7.0` | 0.7.1 起不再支持 rc.1，请停留本版。 |
 | `0.1.5` – `0.1.7` | `0.6.5` | 旧内核最终版；0.7.0 起仅面向 0.2.0。 |
 | `0.1.2-rc.1` | `0.3.1` | 更早旧线，仅历史维护。 |
 | `0.1.1-rc.2` | `0.2.6` | 更早旧线，仅历史维护。 |
 
-> **本仓库是自维护 fork**：从 [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect) fork 而来（`upstream` 远端保留，便于择机合并上游修复）。自 **0.7.7** 起在本 fork 上维护，与上游的差异见下方更新记录；安装写法为 `github:yinchengjian/dsh-workbuddy-connect#v0.7.7`（带 tag 的 git 写法，原因见安装章节），npm 上的 `dsh-workbuddy-connect` 仍是上游原包、不含本 fork 的改动。
+> **本仓库是自维护 fork**：从 [corrinehu/dsh-workbuddy-connect](https://github.com/corrinehu/dsh-workbuddy-connect) fork 而来（`upstream` 远端保留，便于择机合并上游修复）。自 **0.7.7** 起在本 fork 上维护，与上游的差异见下方更新记录；安装写法为 `github:yinchengjian/dsh-workbuddy-connect#v0.7.8`（带 tag 的 git 写法，原因见安装章节），npm 上的 `dsh-workbuddy-connect` 仍是上游原包、不含本 fork 的改动。
 
 历次更新（完整记录见 [releases](https://github.com/yinchengjian/dsh-workbuddy-connect/releases)；0.7.6 及更早的条目来自上游）：
 
+- **0.7.8**：**适配 DSH 0.2.1-rc.2**。0.2.1 内核把 `@earendil-works/pi-ai` 升到了 1.x（`dsh-llm-pi-ai@0.2.1-rc.2` 依赖 `^1.1.0`，且 `TranscriptContext` 变为 branded 类型），插件自带的 0.87.1 已无法再交给内核适配器；同时各 `@deepseek-ai/dsh-*` peer 必须与内核同版本。这正是 0.2.1 上 `dsh web` 报 `skipping profile bundle "dsh-workbuddy-connect"` 的原因。本版把 peer 全部对齐 `0.2.1-rc.2`、自带 pi-ai 升到 `1.3.0`、cordis 升到 `^4.0.5`，并跟进了 `web` seam 的 provider 配置（0.2.1 中改为 volatile 字段）。插件功能与 0.7.7 相同；DSH 0.2.0-rc.2 请继续用 0.7.7。
 - **0.7.7**：**接入 WorkBuddy 自身的网页搜索**，`web_search` 不再需要 `DEEPSEEK_API_KEY`。此前默认的 DeepSeek 搜索后端要求单独 API Key，WorkBuddy 用户通常没有，导致每次搜索都报 `WEB_PROVIDER_CREDENTIAL_MISSING`；现在复用 App 登录态调用官方客户端的 `/agenttool/v1/search`（一次 HTTP 请求，不额外消耗模型调用与生成 token），搜索跟随会话所用的那一版账号、另一版已登录时自动顶替，两版都未登录时提示去哪一版登录。
 - **0.7.6**：修复企业账号模型目录缺少 `glm-5.3-flashx`（[#123](https://github.com/corrinehu/dsh-workbuddy-connect/issues/123)），修复国际版对话请求被上游渠道校验拦截（[#139](https://github.com/corrinehu/dsh-workbuddy-connect/issues/139) / [#142](https://github.com/corrinehu/dsh-workbuddy-connect/issues/142)）。
 - **0.7.5**：修复切换会话后输入框余额与刷新按钮消失（[#125](https://github.com/corrinehu/dsh-workbuddy-connect/issues/125) / [#132](https://github.com/corrinehu/dsh-workbuddy-connect/issues/132)），修复 WSL 调用 Windows 凭据解密程序的环境转发（[#133](https://github.com/corrinehu/dsh-workbuddy-connect/issues/133)），README 收录社区项目（[#130](https://github.com/corrinehu/dsh-workbuddy-connect/issues/130)）。
@@ -194,9 +197,9 @@ dsh plugin --profile web exec dsh-workbuddy-connect doctor --provider workbuddy-
 - **0.7.0**：适配 DSH 0.2.0 的设置服务改造，不再支持 0.1.x。
 - **0.6.5**：0.1.x 线最终版本。
 
-安装示例（按内核选 tag）：`dsh plugin --profile web add github:yinchengjian/dsh-workbuddy-connect#v0.7.7`。各版本的 tag 见 [releases](https://github.com/yinchengjian/dsh-workbuddy-connect/releases)；也可以锁定到某个 commit（`github:yinchengjian/dsh-workbuddy-connect#<sha>`），但**不要用不带 ref 的地址**——那会跟随 `main` 最新提交，可能是未发布的中间状态。
+安装示例（按内核选 tag）：`dsh plugin --profile web add github:yinchengjian/dsh-workbuddy-connect#v0.7.8`（0.2.1-rc.2）或 `#v0.7.7`（0.2.0-rc.2）。各版本的 tag 见 [releases](https://github.com/yinchengjian/dsh-workbuddy-connect/releases)；也可以锁定到某个 commit（`github:yinchengjian/dsh-workbuddy-connect#<sha>`），但**不要用不带 ref 的地址**——那会跟随 `main` 最新提交，可能是未发布的中间状态。
 
-**不要把 profile 级的 `@earendil-works/pi-ai` 升到 1.x**：本插件与 `0.2.0-rc.2` 这一代内核都要求 `^0.87.1`（0.7.2 起由插件自带），第三方插件管理器的「可更新」提示不校验 peer 约束、不能照做（[#86](https://github.com/corrinehu/dsh-workbuddy-connect/issues/86)）；为此历史遗留的 `overrides: {'@earendil-works/pi-ai': '0.87.1'}` 在确认其他插件不依赖前也不要盲目移除。
+**pi-ai 的版本跟着内核走，不要跨代混装**：0.2.0-rc.2 一代要求 `^0.87.1`（0.7.7），0.2.1-rc.2 一代要求 1.x（0.7.8 起自带 `1.3.0`）。第三方插件管理器的「可更新」提示不校验 peer 约束、不能照做（[#86](https://github.com/corrinehu/dsh-workbuddy-connect/issues/86)）；升级到 0.2.1 内核时，历史上为 0.2.0 加的 `overrides: {'@earendil-works/pi-ai': '0.87.1'}` 必须一并移除——否则它会盖过插件自带的 1.x，每次请求都以 `PI_AI_ERROR` 失败。
 
 ## 免责声明
 
